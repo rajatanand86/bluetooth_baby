@@ -3,30 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Baby Sensor Live</title>
+  <title>Baby Sensor Live (DBG)</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0f172a" />
   <link rel="icon" href="icons/icon-192.png" />
   <style>
     :root { color-scheme: light dark; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
-           margin: 0; padding: 0; background: #0b1220; color: #e5e7eb; }
-    header { padding: 14px 16px; background: #0f172a; position: sticky; top: 0; z-index: 10;
-             display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    header h1 { font-size: 18px; margin: 0; font-weight: 600; }
-    .card { background: #111827; border: 1px solid #1f2937; border-radius: 14px; padding: 12px; margin: 12px; }
-    label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 4px; }
-    input[type="text"] { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #374151; background: #0b1020; color: #e5e7eb; }
-    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #374151; background: #1f2937; color: #e5e7eb; }
-    button.primary { background: #2563eb; border-color: #1d4ed8; }
-    button:disabled { opacity: 0.5; }
-    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-    .pill { font-size: 12px; padding: 6px 10px; background: #0b1020; border: 1px solid #243046; border-radius: 9999px; display: inline-block; }
-    canvas { width: 100%; height: 260px; }
-    .flex { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .mt { margin-top: 8px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    small a { color: #93c5fd; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+           margin:0; padding:0; background:#0b1220; color:#e5e7eb }
+    header { padding:14px 16px; background:#0f172a; position:sticky; top:0; z-index:10; display:flex; gap:10px; align-items:center; flex-wrap:wrap }
+    header h1 { font-size:18px; margin:0; font-weight:600 }
+    .card { background:#111827; border:1px solid #1f2937; border-radius:14px; padding:12px; margin:12px }
+    label { display:block; font-size:12px; color:#9ca3af; margin-bottom:4px }
+    input[type="text"] { width:100%; padding:10px; border-radius:10px; border:1px solid #374151; background:#0b1020; color:#e5e7eb }
+    button { padding:10px 14px; border-radius:10px; border:1px solid #374151; background:#1f2937; color:#e5e7eb }
+    button.primary { background:#2563eb; border-color:#1d4ed8 }
+    button:disabled { opacity:.5 }
+    .row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px }
+    .pill { font-size:12px; padding:6px 10px; background:#0b1020; border:1px solid #243046; border-radius:9999px; display:inline-block }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
+    pre { white-space:pre-wrap; max-height:240px; overflow:auto; margin:0 }
   </style>
 </head>
 <body>
@@ -39,290 +35,123 @@
   <div class="card">
     <div class="row-3">
       <div>
-        <label>BLE Service UUID (e.g., NUS <span class="mono">6e400001-b5a3-f393-e0a9-e50e24dcca9e</span>)</label>
-        <input id="serviceUUID" type="text" placeholder="service UUID" />
+        <label>BLE Service UUID</label>
+        <input id="serviceUUID" type="text" placeholder="6e400001-b5a3-f393-e0a9-e50e24dcca9e" />
       </div>
       <div>
         <label>Notify Characteristic UUID (device → phone)</label>
-        <input id="notifyUUID" type="text" placeholder="notify characteristic UUID" />
+        <input id="notifyUUID" type="text" placeholder="6e400006-b5a3-f393-e0a9-e50e24dcca9e" />
       </div>
       <div>
         <label>Write Characteristic UUID (phone → device) — optional</label>
-        <input id="writeUUID" type="text" placeholder="write characteristic UUID" />
+        <input id="writeUUID" type="text" placeholder="6e400002-b5a3-f393-e0a9-e50e24dcca9e" />
       </div>
     </div>
-    <div class="flex mt">
-      <button class="primary" id="connectBtn">Connect</button>
+    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap: wrap">
+      <button class="primary" id="connectBtn">Connect (acceptAllDevices)</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
-      <button id="clearBtn">Clear Data</button>
-      <button id="exportBtn" disabled>Export CSV</button>
+      <button id="clearBtn">Clear Log</button>
+      <button id="scanBtn">List Services</button>
     </div>
-    <div class="mt">
-      <small>Tip: If your firmware uses Nordic UART Service (NUS), use:
-        <span class="mono">6e400001-…cca9e</span> (service),
-        <span class="mono">6e400003-…cca9e</span> (notify/Tx),
-        <span class="mono">6e400002-…cca9e</span> (write/Rx).
-      </small>
-      <br/>
-      <small>Web Bluetooth requires HTTPS and BLE/GATT (not classic SPP like HC-05).</small>
-    </div>
+    <small class="mono">Use your values: service=...001, notify=...006, write=...002</small>
   </div>
 
   <div class="card">
-    <h3 style="margin:0 0 8px 0;">Live Charts</h3>
-    <canvas id="hrChart"></canvas>
-    <div class="mt"></div>
-    <canvas id="touchChart"></canvas>
+    <h3 style="margin:0 0 8px 0;">Debug Log</h3>
+    <pre id="log" class="mono"></pre>
   </div>
 
-  <div class="card">
-    <h3 style="margin:0 0 8px 0;">Raw Stream (latest 30 lines)</h3>
-    <pre id="log" class="mono" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:0;"></pre>
-  </div>
+<script>
+let deferredPrompt;
+const installBtn = document.getElementById('installBtn');
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; installBtn.hidden = false; });
+installBtn.addEventListener('click', async () => { if (!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; installBtn.hidden = true; });
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script>
-  <script>
-    // --- PWA install prompt handling ---
-    let deferredPrompt;
-    const installBtn = document.getElementById('installBtn');
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      installBtn.hidden = false;
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js')); }
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $('status'), logEl = $('log');
+const serviceUUIDEl = $('serviceUUID'), notifyUUIDEl = $('notifyUUID'), writeUUIDEl = $('writeUUID');
+const connectBtn = $('connectBtn'), disconnectBtn = $('disconnectBtn'), scanBtn = $('scanBtn'), clearBtn = $('clearBtn');
+
+serviceUUIDEl.value = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+notifyUUIDEl.value  = '6e400006-b5a3-f393-e0a9-e50e24dcca9e';
+writeUUIDEl.value   = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+
+function setStatus(t){ statusEl.textContent = t; }
+function log(...args){ const s = args.map(a => (a instanceof Error ? (a.stack||a.message) : (typeof a==='object'? JSON.stringify(a): String(a)))).join(' '); logEl.textContent += s + "\n"; logEl.scrollTop = logEl.scrollHeight; console.log(...args); }
+
+let device, server;
+
+async function connect(){
+  try{
+    setStatus('requesting device…');
+    const serviceUUID = serviceUUIDEl.value.trim();
+    device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [serviceUUID]
     });
-    installBtn.addEventListener('click', async () => {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-      deferredPrompt = null;
-      installBtn.hidden = true;
-    });
+    log('Selected device:', device.name || '(no name)');
+    device.addEventListener('gattserverdisconnected', () => { setStatus('disconnected'); log('GATT disconnected'); connectBtn.disabled = false; disconnectBtn.disabled = true; });
 
-    // --- Service worker registration ---
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
-    }
+    setStatus('connecting…');
+    server = await device.gatt.connect();
+    log('GATT connected');
+    const svc = await server.getPrimaryService(serviceUUID);
+    log('Got service', serviceUUID);
 
-    const $ = (id) => document.getElementById(id);
-    const statusEl = $('status');
-    const logEl = $('log');
-    const connectBtn = $('connectBtn');
-    const disconnectBtn = $('disconnectBtn');
-    const exportBtn = $('exportBtn');
-    const clearBtn = $('clearBtn');
+    const notifyUUID = notifyUUIDEl.value.trim();
+    const writeUUID  = writeUUIDEl.value.trim();
 
-    const serviceUUIDEl = $('serviceUUID');
-    const notifyUUIDEl = $('notifyUUID');
-    const writeUUIDEl = $('writeUUID');
-
-    // Defaults for NUS
-    serviceUUIDEl.value = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-    notifyUUIDEl.value  = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // Tx/notify
-    writeUUIDEl.value   = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // Rx/write
-
-    // --- Chart setup ---
-    const hrCtx = $('hrChart');
-    const touchCtx = $('touchChart');
-
-    const hrData = { labels: [], datasets: [{ label: 'Heart Rate (BPM)', data: [], tension: 0.25, pointRadius: 0 }] };
-    const touchData = { labels: [], datasets: [{ label: 'Touch / Pressure', data: [], tension: 0.25, pointRadius: 0 }] };
-
-    const hrChart = new Chart(hrCtx, {
-      type: 'line',
-      data: hrData,
-      options: {
-        animation: false,
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { type: 'time', time: { unit: 'second', tooltipFormat: 'HH:mm:ss' } },
-          y: { title: { display: true, text: 'BPM' } }
-        },
-        plugins: { legend: { display: true } }
-      }
+    const notifyChar = await svc.getCharacteristic(notifyUUID);
+    log('Got notify characteristic', notifyUUID, 'props=', notifyChar.properties);
+    await notifyChar.startNotifications();
+    notifyChar.addEventListener('characteristicvaluechanged', (e) => {
+      const txt = new TextDecoder().decode(e.target.value);
+      log('NOTIFY:', txt.replace(/\r/g,''));
     });
 
-    const touchChart = new Chart(touchCtx, {
-      type: 'line',
-      data: touchData,
-      options: {
-        animation: false,
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { type: 'time', time: { unit: 'second', tooltipFormat: 'HH:mm:ss' } },
-          y: { title: { display: true, text: 'Touch' } }
-        },
-        plugins: { legend: { display: true } }
-      }
-    });
-
-    // Storage for CSV
-    const rows = []; // {tsISO, hr, touch, raw}
-
-    function setStatus(t) { statusEl.textContent = t; }
-    function logLine(s) {
-      const lines = (logEl.textContent + '\n' + s).trim().split('\n');
-      logEl.textContent = lines.slice(-30).join('\n');
+    if(writeUUID){
+      const writeChar = await svc.getCharacteristic(writeUUID);
+      log('Got write characteristic', writeUUID, 'props=', writeChar.properties);
     }
 
-    function addPoint(ts, hr, touch) {
-      const tsLabel = ts;
-      if (typeof hr === 'number' && !Number.isNaN(hr)) {
-        hrData.labels.push(tsLabel);
-        hrData.datasets[0].data.push(hr);
-        if (hrData.labels.length > 600) { hrData.labels.shift(); hrData.datasets[0].data.shift(); }
-        hrChart.update();
-      }
-      if (typeof touch === 'number' && !Number.isNaN(touch)) {
-        touchData.labels.push(tsLabel);
-        touchData.datasets[0].data.push(touch);
-        if (touchData.labels.length > 600) { touchData.labels.shift(); touchData.datasets[0].data.shift(); }
-        touchChart.update();
-      }
-    }
+    connectBtn.disabled = true; disconnectBtn.disabled = false;
+    setStatus('connected');
+  }catch(err){
+    setStatus('error');
+    log('ERROR:', err);
+  }
+}
 
-    // Parser accepts common formats: "HR,78,TOUCH,12", "78,12", "HR: 78", "78"
-    function parseLine(line) {
-      let hr = undefined, touch = undefined;
-
-      const hrMatch = line.match(/hr[:=\s]+(\d+(\.\d+)?)/i);
-      const touchMatch = line.match(/(touch|press|force)[:=\s]+(\d+(\.\d+)?)/i);
-      if (hrMatch) hr = parseFloat(hrMatch[1]);
-      if (touchMatch) touch = parseFloat(touchMatch[2]);
-
-      if (hr === undefined && touch === undefined) {
-        const parts = line.split(/[,	;]/).map(s => s.trim()).filter(Boolean);
-        if (parts.length === 2 && parts.every(p => !isNaN(parseFloat(p)))) {
-          hr = parseFloat(parts[0]); touch = parseFloat(parts[1]);
-        } else if (parts.length >= 4) {
-          for (let i = 0; i < parts.length - 1; i++) {
-            if (/^hr$/i.test(parts[i]) && !isNaN(parseFloat(parts[i+1]))) hr = parseFloat(parts[i+1]);
-            if (/^(touch|press|force)$/i.test(parts[i]) && !isNaN(parseFloat(parts[i+1]))) touch = parseFloat(parts[i+1]);
-          }
-        } else if (parts.length === 1 && !isNaN(parseFloat(parts[0]))) {
-          hr = parseFloat(parts[0]);
-        }
-      }
-
-      return { hr, touch };
-    }
-
-    // --- BLE connection ---
-    let device, server, notifyChar, writeChar;
-    let buffer = '';
-
-    async function connect() {
+async function listServices(){
+  try{
+    if(!device){ log('No device yet. Click Connect first.'); return; }
+    if(!server || !server.connected){ log('Not connected.'); return; }
+    const services = await server.getPrimaryServices();
+    log('Primary services count:', services.length);
+    for(const s of services){
+      log('Service:', s.uuid);
       try {
-        setStatus('requesting device…');
-        const serviceUUID = serviceUUIDEl.value.trim();
-        const notifyUUID = notifyUUIDEl.value.trim();
-        const writeUUID  = writeUUIDEl.value.trim();
-
-        device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: [serviceUUID]
-        });
-        device.addEventListener('gattserverdisconnected', onDisconnected);
-
-        setStatus('connecting…');
-        server = await device.gatt.connect();
-        const service = await server.getPrimaryService(serviceUUID);
-
-        notifyChar = await service.getCharacteristic(notifyUUID);
-        await notifyChar.startNotifications();
-        notifyChar.addEventListener('characteristicvaluechanged', handleNotify);
-
-        if (writeUUID) {
-          writeChar = await service.getCharacteristic(writeUUID);
+        const chars = await s.getCharacteristics();
+        for(const c of chars){
+          log('  Char:', c.uuid, 'props=', JSON.stringify(c.properties));
         }
-
-        connectBtn.disabled = true;
-        disconnectBtn.disabled = false;
-        exportBtn.disabled = false;
-        setStatus('connected');
-        logLine('Connected to ' + device.name);
-      } catch (err) {
-        setStatus('error');
-        console.error(err);
-        logLine('Error: ' + err.message);
-      }
+      } catch(e){ log('  getCharacteristics error:', e.message); }
     }
+  }catch(e){ log('ERROR listServices:', e); }
+}
 
-    function onDisconnected() {
-      setStatus('disconnected');
-      connectBtn.disabled = false;
-      disconnectBtn.disabled = true;
-    }
+async function disconnect(){
+  try{ if(device && device.gatt.connected){ device.gatt.disconnect(); } }catch{}
+}
 
-    async function disconnect() {
-      try {
-        if (notifyChar) { await notifyChar.stopNotifications(); }
-      } catch {}
-      if (device && device.gatt.connected) device.gatt.disconnect();
-    }
+connectBtn.addEventListener('click', connect);
+disconnectBtn.addEventListener('click', disconnect);
+scanBtn.addEventListener('click', listServices);
+clearBtn.addEventListener('click', () => logEl.textContent = '');
 
-    function handleNotify(event) {
-      const v = event.target.value;
-      const text = new TextDecoder().decode(v);
-      buffer += text;
-
-      let idx;
-      while ((idx = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, idx).replace(/\r$/, '');
-        buffer = buffer.slice(idx + 1);
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        const ts = new Date();
-        const { hr, touch } = parseLine(trimmed);
-        rows.push({ tsISO: ts.toISOString(), hr: hr ?? '', touch: touch ?? '', raw: trimmed });
-        addPoint(ts, hr, touch);
-        logLine(trimmed);
-      }
-    }
-
-    async function sendCommand(s) {
-      if (!writeChar) return;
-      const data = new TextEncoder().encode(s);
-      await writeChar.writeValue(data);
-    }
-
-    function clearData() {
-      rows.length = 0;
-      hrData.labels.length = 0;
-      hrData.datasets[0].data.length = 0;
-      touchData.labels.length = 0;
-      touchData.datasets[0].data.length = 0;
-      hrChart.update();
-      touchChart.update();
-      logEl.textContent = '';
-    }
-
-    function exportCSV() {
-      const header = 'timestamp,hr,touch,raw';
-      const lines = rows.map(r => [r.tsISO, r.hr, r.touch, JSON.stringify(r.raw)].join(','));
-      const blob = new Blob([header + '\n' + lines.join('\n')], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'baby_sensor_log.csv';
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-    }
-
-    connectBtn.addEventListener('click', connect);
-    disconnectBtn.addEventListener('click', disconnect);
-    exportBtn.addEventListener('click', exportCSV);
-    clearBtn.addEventListener('click', clearData);
-
-    if (!('bluetooth' in navigator)) {
-      setStatus('Web Bluetooth not supported');
-      connectBtn.disabled = true;
-      logLine('This browser/device does not support Web Bluetooth. Use Android Chrome 79+.');
-    } else {
-      setStatus('ready');
-    }
-  </script>
+if (!('bluetooth' in navigator)) { setStatus('Web Bluetooth not supported'); log('This device/browser does not support Web Bluetooth.'); } else { setStatus('ready'); }
+</script>
 </body>
 </html>
