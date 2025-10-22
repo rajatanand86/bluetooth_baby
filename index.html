@@ -221,7 +221,7 @@
         const writeUUID  = writeUUIDEl.value.trim();
 
         device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: [serviceUUID] }],
+          acceptAllDevices: true,
           optionalServices: [serviceUUID]
         });
         device.addEventListener('gattserverdisconnected', onDisconnected);
