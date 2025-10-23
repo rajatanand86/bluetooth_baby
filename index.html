@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Baby Sensor Live – KMC</title>
+  <title>Baby Sensor Live – KMC (Recorder)</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0f172a" />
   <link rel="icon" href="icons/icon-192.png" />
@@ -26,6 +26,7 @@
     pre { white-space:pre-wrap; max-height:220px; overflow:auto; margin:0 }
     canvas { width:100%; height:220px }
     .muted { color:#9ca3af; font-size:12px }
+    #downloads a { display:block; margin-top:6px; }
   </style>
 </head>
 <body>
@@ -50,29 +51,34 @@
         <input id="writeUUID" type="text" />
       </div>
     </div>
-    <div class="row-2" style="margin-top:8px">
+    <div class="row-3" style="margin-top:8px">
       <div>
         <label>Client ID</label>
         <input id="clientId" type="text" placeholder="1234567890" />
       </div>
       <div>
-        <label>Epoch (leave blank to auto-fill)</label>
+        <label>Epoch (leave blank = now)</label>
         <input id="epoch" type="text" placeholder="Unix time" />
+      </div>
+      <div>
+        <label>Session Label (optional)</label>
+        <input id="label" type="text" placeholder="e.g., baby_A_2025-10-23" />
       </div>
     </div>
     <div style="display:flex; gap:8px; margin-top:8px; flex-wrap: wrap">
-      <button class="primary" id="connectBtn">Connect (acceptAllDevices)</button>
+      <button class="primary" id="connectBtn">Connect</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
-      <button id="startBtn" disabled>Start</button>
-      <button id="stopBtn" disabled>Stop</button>
+      <button id="startBtn" disabled>Start + Record</button>
+      <button id="stopBtn" disabled>Stop + Save CSV</button>
       <button id="batteryBtn" disabled>Battery</button>
       <button id="motorOnBtn" disabled>Motor ON</button>
       <button id="motorOffBtn" disabled>Motor OFF</button>
       <button id="clearBtn">Clear Logs</button>
     </div>
+    <div id="downloads" class="muted" style="margin-top:6px"></div>
     <div class="muted" style="margin-top:6px">
-      Defaults set for KMC: service=<span class="mono">6e400001-…cca9e</span>, notify=<span class="mono">6e400006-…cca9e</span>, write=<span class="mono">6e400002-…cca9e</span>.
-      Commands per manual: <span class="mono">{"start":[clientId, epoch]}</span>, <span class="mono">{"stop":clientId}</span>, alerts like <span class="mono">{"hr":[clientId, level]}</span>.
+      Defaults: service=<span class="mono">6e400001-…cca9e</span>, notify=<span class="mono">6e400006-…cca9e</span>, write=<span class="mono">6e400002-…cca9e</span>.
+      Data saved to your device via a CSV download and cached in IndexedDB (history list appears below after saving).
     </div>
   </div>
 
@@ -99,26 +105,23 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script>
 <script>
-// PWA install
 let deferredPrompt;
 const installBtn = document.getElementById('installBtn');
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt=e; installBtn.hidden=false; });
 installBtn.addEventListener('click', async () => { if(!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; installBtn.hidden=true; });
 
-// SW
 if('serviceWorker' in navigator){ window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js')); }
 
 const $ = id => document.getElementById(id);
-const statusEl = $('status'), logEl = $('log');
+const statusEl = $('status'), logEl = $('log'), downloadsEl = $('downloads');
 const connectBtn = $('connectBtn'), disconnectBtn = $('disconnectBtn');
 const startBtn = $('startBtn'), stopBtn = $('stopBtn');
 const batteryBtn = $('batteryBtn'), motorOnBtn = $('motorOnBtn'), motorOffBtn = $('motorOffBtn');
 const clearBtn = $('clearBtn');
 
 const serviceUUIDEl = $('serviceUUID'), notifyUUIDEl = $('notifyUUID'), writeUUIDEl = $('writeUUID');
-const clientIdEl = $('clientId'), epochEl = $('epoch');
+const clientIdEl = $('clientId'), epochEl = $('epoch'), labelEl = $('label');
 
-// Defaults for KMC
 serviceUUIDEl.value = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 notifyUUIDEl.value  = '6e400006-b5a3-f393-e0a9-e50e24dcca9e';
 writeUUIDEl.value   = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
@@ -128,7 +131,6 @@ function setStatus(t){ statusEl.textContent = t; }
 function log(...args){ const s = args.map(a => (a instanceof Error ? (a.stack||a.message) : (typeof a==='object'? JSON.stringify(a): String(a)))).join(' '); logEl.textContent += s + "\n"; logEl.scrollTop = logEl.scrollHeight; console.log(...args); }
 clearBtn.addEventListener('click', ()=> logEl.textContent='');
 
-// Charts builder
 function makeChart(canvas, label, yLabel){
   return new Chart(canvas, { type:'line', data:{ labels:[], datasets:[{ label, data:[], tension:0.1, pointRadius:0 }] },
     options:{ animation:false, responsive:true, maintainAspectRatio:false,
@@ -146,6 +148,64 @@ function addPoint(chart, ts, value){
   chart.data.datasets[0].data.push(value);
   if(chart.data.labels.length>600){ chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
   chart.update();
+}
+
+// IndexedDB helpers
+const DB_NAME='kmc_rec_db', STORE='sessions';
+function idbOpen(){
+  return new Promise((resolve,reject)=>{
+    const req = indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath:'id' });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbSaveSession(obj){
+  try{
+    const db = await idbOpen();
+    await new Promise((res,rej)=>{
+      const tx = db.transaction(STORE,'readwrite');
+      tx.objectStore(STORE).put(obj);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  }catch(e){ log('IDB save error:', e.message); }
+}
+async function idbListSessions(){
+  try{
+    const db = await idbOpen();
+    return await new Promise((res,rej)=>{
+      const out=[]; const tx = db.transaction(STORE,'readonly'); const store = tx.objectStore(STORE);
+      const req = store.openCursor();
+      req.onsuccess = () => { const cur=req.result; if(cur){ out.push(cur.value); cur.continue(); } else res(out); };
+      req.onerror = () => rej(req.error);
+    });
+  }catch(e){ log('IDB list error:', e.message); return []; }
+}
+
+// Recording
+let recording=false, rows=[], sessionId=null;
+function startRecording(){
+  rows = [];
+  recording = true;
+  sessionId = Date.now();
+  log('Recording started. sessionId=', sessionId);
+}
+function stopRecordingAndSave(){
+  recording = false;
+  if(rows.length===0){ log('No data captured.'); return; }
+  const label = labelEl.value.trim() || 'session';
+  const filename = `${label}_${new Date(sessionId).toISOString().replace(/[:]/g,'-')}.csv`;
+  const header = 'clientId,epoch,ts_iso,hr,spo2,resp,mtemp,btemp,touch,activeCount,battery';
+  const lines = rows.map(r => [r.clientId,r.epoch,r.tsISO,r.hr,r.spo2,r.resp,r.mtemp,r.btemp,r.touch,r.activeCount,r.battery].join(','));
+  const csv = header + '\n' + lines.join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.textContent = `Download ${filename}`;
+  downloadsEl.prepend(a);
+  idbSaveSession({ id: sessionId, name: filename, csv });
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
 
 // BLE
@@ -183,9 +243,8 @@ async function disconnect(){ try{ if(notifyChar){ await notifyChar.stopNotificat
 
 async function writeJSON(obj){
   if(!writeChar){ log('No write characteristic'); return; }
-  const text = JSON.stringify(obj) + "\n"; // newline-terminated per our stream logic
+  const text = JSON.stringify(obj) + "\n";
   const enc = new TextEncoder().encode(text);
-  // Some devices prefer without response; try with response first, fallback.
   try{ await writeChar.writeValue(enc); }
   catch(e){ try{ await writeChar.writeValueWithoutResponse(enc); } catch(e2){ log('ERROR write:', e2.message); } }
   log('TX ->', text.trim());
@@ -196,11 +255,13 @@ function nowEpoch(){ return Math.floor(Date.now()/1000).toString(); }
 startBtn.addEventListener('click', ()=>{
   const cid = clientIdEl.value.trim() || '0000000000';
   const ep = epochEl.value.trim() || nowEpoch();
+  startRecording();
   writeJSON({ start:[cid, ep] });
 });
 stopBtn.addEventListener('click', ()=>{
   const cid = clientIdEl.value.trim() || '0000000000';
   writeJSON({ stop: cid });
+  stopRecordingAndSave();
 });
 batteryBtn.addEventListener('click', ()=>{
   const cid = clientIdEl.value.trim() || '0000000000';
@@ -227,9 +288,9 @@ function handleNotify(e){
     log('RX <-', trimmed);
     try{
       const obj = JSON.parse(trimmed);
-      // Data packets {"data":[clientId, epoch, hr, spo2, resp, mtemp, btemp, touch, activeCount, battery]}
       if(obj.data && Array.isArray(obj.data)){
         const arr = obj.data;
+        const cid = arr[0];
         const epoch = Number(arr[1]) || Math.floor(Date.now()/1000);
         const ts = new Date(epoch*1000);
         const hr = Number(arr[2]); if(!isNaN(hr)) addPoint(hrChart, ts, hr);
@@ -238,25 +299,39 @@ function handleNotify(e){
         const mtemp = Number(arr[5]); if(!isNaN(mtemp)) addPoint(tempMChart, ts, mtemp);
         const btemp = Number(arr[6]); if(!isNaN(btemp)) addPoint(tempBChart, ts, btemp);
         const touch = Number(arr[7]); if(!isNaN(touch)) addPoint(touchChart, ts, touch);
-        // battery arr[9] is available; log for now
+        const activeCount = Number(arr[8]);
+        const battery = Number(arr[9]);
+        if(recording){
+          rows.push({ clientId: cid, epoch, tsISO: ts.toISOString(), hr, spo2, resp, mtemp, btemp, touch, activeCount, battery });
+        }
       }
-      // Alerts
       if(obj.hr){ log('ALERT HR:', JSON.stringify(obj.hr)); }
       if(obj.spo2){ log('ALERT SpO2:', JSON.stringify(obj.spo2)); }
       if(obj.btemp){ log('ALERT Baby Temp:', JSON.stringify(obj.btemp)); }
       if(obj.mtemp){ log('ALERT Mother Temp:', JSON.stringify(obj.mtemp)); }
       if(obj.apnea){ log('ALERT Apnea:', JSON.stringify(obj.apnea)); }
-      if(obj.querylog){ log('QUERYLOG:', JSON.stringify(obj.querylog)); }
-      if(obj.sendlog){ log('SENDLOG:', JSON.stringify(obj.sendlog)); }
       if(obj.batsts){ log('BATTERY:', JSON.stringify(obj.batsts)); }
-    }catch(err){
-      // Not JSON; ignore or handle CSV fallback
-    }
+    }catch(err){ /* ignore non-JSON */ }
   }
 }
 
 connectBtn.addEventListener('click', connect);
 disconnectBtn.addEventListener('click', disconnect);
+
+// Load previous recordings
+(async function(){
+  const list = await idbListSessions();
+  if(list.length){
+    downloadsEl.innerHTML = '<strong>Saved sessions:</strong>';
+    for(const s of list.sort((a,b)=>b.id-a.id)){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([s.csv], {type:'text/csv'}));
+      a.download = s.name;
+      a.textContent = 'Download ' + s.name;
+      downloadsEl.appendChild(a);
+    }
+  }
+})();
 
 if(!('bluetooth' in navigator)){ setStatus('Web Bluetooth not supported'); log('This device/browser does not support Web Bluetooth.'); } else { setStatus('ready'); }
 </script>
