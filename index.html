@@ -1,190 +1,442 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Baby Sensor Live - KMC</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Baby Sensor Live – KMC</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b1220">
 
-  <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#ffffff">
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      margin: 1em;
-      background: #f9fafb;
-    }
-    h1 { font-size: 1.3rem; margin-bottom: 0.5em; }
-    button {
-      margin: 4px;
-      padding: 8px 14px;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      cursor: pointer;
-      font-size: 0.95rem;
-    }
-    #status {
-      margin: 0.5em 0;
-      font-weight: 600;
-      color: #374151;
-    }
-    #logs {
-      white-space: pre-wrap;
-      background: #fff;
-      border-radius: 8px;
-      border: 1px solid #ddd;
-      padding: 8px;
-      height: 200px;
-      overflow-y: auto;
-      font-family: monospace;
-      font-size: 0.85rem;
-    }
+<style>
+  :root{
+    --bg:#0b1220;        /* dark blue-ish */
+    --panel:#16223a;     /* card bg */
+    --grid:#1f2f54;      /* grid line */
+    --text:#dbe7ff;      /* primary text */
+    --muted:#8aa0c6;     /* secondary text */
+    --accent:#6fc3ff;    /* cyan accent */
+    --ok:#26d07c;        /* good */
+    --warn:#ffd166;      /* warning */
+    --bad:#ff6b6b;       /* bad */
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:20px;
+    font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text);
+  }
+  header{
+    display:flex; align-items:center; gap:12px;
+    padding:12px 16px; border-radius:12px; background:var(--panel);
+    position:sticky; top:0; z-index:2;
+  }
+  h1{font-size:20px; margin:0; font-weight:700}
+  .chip{
+    padding:3px 10px; border-radius:999px; background:#0e172c; border:1px solid var(--grid);
+    font-weight:600; font-size:12px; color:#a8c2ff; text-transform:lowercase;
+  }
+  .row{display:flex; flex-wrap:wrap; gap:10px; margin-top:12px}
+  button{
+    background:#10203b; color:var(--text); border:1px solid var(--grid);
+    padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600;
+  }
+  button:disabled{opacity:.5; cursor:not-allowed}
+  #status{margin-left:auto; color:var(--muted); font-weight:600}
 
-    /* 🔋 Battery badge */
-    #battery-badge{
-      position: fixed;
-      top: 8px; right: 8px;
-      padding: 6px 10px;
-      border-radius: 12px;
-      font: 600 14px system-ui, sans-serif;
-      background: #f3f4f6;
-      border: 1px solid #e5e7eb;
-    }
-    #battery-badge.low   { background:#fff1f2; border-color:#fecaca; }
-    #battery-badge.warn  { background:#fffbeb; border-color:#fde68a; }
-    #battery-badge.ok    { background:#ecfdf5; border-color:#a7f3d0; }
+  /* Battery badge */
+  #battery-badge{
+    margin-left:6px; padding:3px 8px; border-radius:12px;
+    border:1px solid var(--grid); background:#0e172c; color:#bfe3ff; font-weight:700;
+  }
+  #battery-badge.low { color:#ffd2d2; border-color:#5c2b2b; }
+  #battery-badge.warn{ color:#ffe8b2; border-color:#634e1a; }
+  #battery-badge.ok  { color:#b8f5d7; border-color:#265341; }
 
-    canvas { max-width: 100%; margin-top: 10px; border-radius: 6px; }
-  </style>
+  /* KPI tiles */
+  .kpi-grid{
+    margin-top:16px;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(240px,1fr));
+    gap:12px;
+  }
+  @media (min-width:900px){
+    .kpi-grid{grid-template-columns:repeat(3,minmax(240px,1fr))}
+  }
+  .kpi{
+    background:var(--panel); border:1px solid var(--grid);
+    border-radius:14px; padding:14px; position:relative;
+  }
+  .kpi h3{
+    margin:0; margin-bottom:6px; font-size:14px; font-weight:800; color:#cfe1ff;
+    display:flex; align-items:center; gap:8px;
+  }
+  .kpi .unit{color:var(--muted); font-weight:700; font-size:12px}
+  .kpi .value{
+    font-size:36px; font-weight:900; letter-spacing:0.5px; color:var(--accent);
+    line-height:1.15;
+  }
+  .kpi .meta{
+    margin-top:6px; font-size:12px; color:var(--muted); display:flex; gap:10px; align-items:center;
+  }
+  .dot{
+    width:8px; height:8px; border-radius:50%; display:inline-block; background:var(--ok);
+    box-shadow:0 0 8px rgba(38,208,124,.5);
+  }
+  .stale .dot{ background:var(--warn); box-shadow:none; }
+  .expired .dot{ background:var(--bad); }
+  .stale .value{ opacity:.8 }
+  .expired .value{ opacity:.6 }
+
+  /* Logs (optional) */
+  #logs{
+    margin-top:14px; height:160px; overflow:auto; border-radius:10px;
+    background:#0e172c; border:1px dashed var(--grid); padding:10px;
+    font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    color:#a9bfec;
+  }
+</style>
 </head>
 
 <body>
-  <h1>Baby Sensor Live – KMC</h1>
+  <header>
+    <h1>Baby Sensor Live – KMC</h1>
+    <span id="conn-chip" class="chip">disconnected</span>
+    <span id="battery-badge" class="ok">🔋 <b id="battery-pct">--</b>%</span>
+    <div class="row" style="margin-left:auto">
+      <button id="btnConnect">Connect</button>
+      <button id="btnDisconnect" disabled>Disconnect</button>
+    </div>
+    <div id="status">Idle</div>
+  </header>
 
-  <!-- 🔋 Battery display -->
-  <div id="battery-badge" class="battery ok" aria-label="Battery level">
-    🔋 <span id="battery-pct">--</span>%
-  </div>
+  <!-- KPI cards -->
+  <section class="kpi-grid" id="kpiGrid">
+    <div class="kpi" id="kpi-hr">
+      <h3>Heart Rate <span class="unit">(BPM)</span></h3>
+      <div class="value" id="val-hr">--</div>
+      <div class="meta">
+        <span class="dot"></span>
+        <span id="ago-hr">never</span>
+      </div>
+    </div>
 
-  <div>
-    <button id="connect">Connect</button>
-    <button id="disconnect">Disconnect</button>
-    <button id="start">Start + Record</button>
-    <button id="stop">Stop + Save CSV</button>
-    <button id="clear">Clear Logs</button>
-  </div>
+    <div class="kpi" id="kpi-spo2">
+      <h3>SpO₂ <span class="unit">(%)</span></h3>
+      <div class="value" id="val-spo2">--</div>
+      <div class="meta">
+        <span class="dot"></span>
+        <span id="ago-spo2">never</span>
+      </div>
+    </div>
 
-  <div id="status">Status: Idle</div>
+    <div class="kpi" id="kpi-resp">
+      <h3>Respiration <span class="unit">(rate)</span></h3>
+      <div class="value" id="val-resp">--</div>
+      <div class="meta">
+        <span class="dot"></span>
+        <span id="ago-resp">never</span>
+      </div>
+    </div>
+
+    <div class="kpi" id="kpi-touch">
+      <h3>Touch Active <span class="unit">(0/1)</span></h3>
+      <div class="value" id="val-touch">--</div>
+      <div class="meta">
+        <span class="dot"></span>
+        <span id="ago-touch">never</span>
+      </div>
+    </div>
+
+    <div class="kpi" id="kpi-btemp">
+      <h3>Baby Temp <span class="unit">(°C)</span></h3>
+      <div class="value" id="val-btemp">--</div>
+      <div class="meta">
+        <span class="dot"></span>
+        <span id="ago-btemp">never</span>
+      </div>
+    </div>
+
+    <div class="kpi" id="kpi-mtemp">
+      <h3>Mother Temp <span class="unit">(°C)</span></h3>
+      <div class="value" id="val-mtemp">--</div>
+      <div class="meta">
+        <span class="dot"></span>
+        <span id="ago-mtemp">never</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Optional raw log for debugging -->
   <div id="logs"></div>
 
-  <canvas id="timeseries" height="140"></canvas>
+<script>
+/* ============================
+   CONFIG – adjust for your device
+   ============================ */
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    // ========== Chart Setup ==========
-    const tsCtx = document.getElementById('timeseries').getContext('2d');
-    const tsData = { labels: [], datasets: [{ label: 'Sensor', data: [] }] };
-    const tsChart = new Chart(tsCtx, {
-      type: 'line',
-      data: tsData,
-      options: { animation: false, scales: { x: { display: false } } }
-    });
+// If you know the UUIDs, set them here; otherwise leave acceptAllDevices: true.
+const SERVICE_UUID        = null; // e.g. '6e400001-b5a3-f393-e0a9-e50e24dcca9e' (Nordic UART)
+const NOTIFY_CHAR_UUID    = null; // e.g. '6e400003-b5a3-f393-e0a9-e50e24dcca9e'
+const WRITE_CHAR_UUID     = null; // optional, if you need to send cmds
 
-    function pushPoint(v, max = 1000) {
-      tsData.labels.push(Date.now());
-      tsData.datasets[0].data.push(v);
-      if (tsData.labels.length > max) {
-        tsData.labels.shift();
-        tsData.datasets[0].data.shift();
+// Map CSV field positions → signal names expected below.
+// Example CSV per line: HR,SpO2,Resp,Touch,BabyTemp,MotherTemp,Battery
+const FIELD_MAP = {
+  hr:        0,
+  spo2:      1,
+  resp:      2,
+  touch:     3,
+  babyTemp:  4,
+  motherTemp:5,
+  battery:   6, // optional; if absent, battery remains "--"
+};
+
+// For lines that end with 2-digit battery (%), set:
+const BATTERY_LAST_TWO_DIGITS = true; // change to false if you already have a battery column in CSV
+
+// Number formatting for displays
+const FORMATTERS = {
+  hr:        v => isFinite(v) ? Math.round(v) : '--',
+  spo2:      v => isFinite(v) ? Math.round(v) : '--',
+  resp:      v => isFinite(v) ? Math.round(v) : '--',
+  touch:     v => v!=null ? (Number(v)>=0.5 ? '1' : '0') : '--',
+  babyTemp:  v => isFinite(v) ? v.toFixed(1) : '--',
+  motherTemp:v => isFinite(v) ? v.toFixed(1) : '--',
+  battery:   v => isFinite(v) ? Math.max(0,Math.min(100,Math.round(v))) : '--',
+};
+
+// Staleness thresholds (ms)
+const STALE_AFTER   = 30_000;  // mark tile as “stale” if no update ≥ 30s
+const EXPIRE_AFTER  = 90_000;  // mark tile as “expired” (red dot)
+
+/* ============================
+   STATE
+   ============================ */
+let btDevice = null, gatt = null, notifyChar = null, writeChar = null;
+let lastUpdate = {
+  hr:null, spo2:null, resp:null, touch:null, babyTemp:null, motherTemp:null, battery:null
+};
+
+/* ============================
+   UI helpers
+   ============================ */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
+
+const statusEl = $('#status');
+const connChip = $('#conn-chip');
+const logsEl   = $('#logs');
+const batteryBadge = $('#battery-badge');
+const batteryPct   = $('#battery-pct');
+
+function setStatus(msg){ statusEl.textContent = msg; }
+function setConn(state){
+  connChip.textContent = state;
+  connChip.style.borderColor = state === 'connected' ? 'rgba(111,195,255,.5)' : 'var(--grid)';
+  connChip.style.color = state === 'connected' ? '#c7e9ff' : '#a8c2ff';
+}
+function logLine(s){
+  logsEl.textContent += s + "\n";
+  logsEl.scrollTop = logsEl.scrollHeight;
+}
+
+// Update single KPI tile
+function updateTile(key, value){
+  const now = Date.now();
+  lastUpdate[key] = now;
+
+  const valEl = $(`#val-${keyMap[key]||key}`);
+  if (!valEl) return;
+
+  valEl.textContent = FORMATTERS[key](value);
+
+  // Age label
+  const agoEl = $(`#ago-${keyMap[key]||key}`);
+  if (agoEl) agoEl.textContent = 'just now';
+
+  // Remove stale/expired
+  const kpi = $(`#kpi-${keyMap[key]||key}`);
+  kpi.classList.remove('stale','expired');
+}
+
+// Update battery badge
+function updateBattery(value){
+  const pct = FORMATTERS.battery(value);
+  batteryPct.textContent = pct;
+  batteryBadge.classList.remove('low','warn','ok');
+  if (pct === '--') return;
+  const n = Number(pct);
+  if (n <= 20) batteryBadge.classList.add('low');
+  else if (n <= 40) batteryBadge.classList.add('warn');
+  else batteryBadge.classList.add('ok');
+  lastUpdate.battery = Date.now();
+}
+
+// Human “ago” updater + stale highlighting
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, t] of Object.entries(lastUpdate)) {
+    if (!t) continue;
+    const age = now - t;
+    const agoEl = $(`#ago-${keyMap[k]||k}`);
+    const kpi = $(`#kpi-${keyMap[k]||k}`);
+    if (agoEl) agoEl.textContent = formatAgo(age);
+    if (kpi){
+      kpi.classList.toggle('stale', age >= STALE_AFTER && age < EXPIRE_AFTER);
+      kpi.classList.toggle('expired', age >= EXPIRE_AFTER);
+    }
+  }
+  // battery badge “ago” not shown, but we still dim on long gaps if you want:
+  // (Optional) change badge color if > 5 min without updates, etc.
+}, 1_000);
+
+function formatAgo(ms){
+  if (ms < 1500) return 'just now';
+  const s = Math.floor(ms/1000);
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s/60);
+  const r = s%60;
+  return m + 'm ' + r + 's ago';
+}
+
+// Map internal keys → element suffixes
+const keyMap = {
+  hr:'hr',
+  spo2:'spo2',
+  resp:'resp',
+  touch:'touch',
+  babyTemp:'btemp',
+  motherTemp:'mtemp',
+  battery:'battery'
+};
+
+/* ============================
+   BLE connect / notifications
+   ============================ */
+$('#btnConnect').addEventListener('click', async () => {
+  try{
+    setStatus('Requesting device…');
+    const options = SERVICE_UUID ? {filters:[{services:[SERVICE_UUID]}]} : {acceptAllDevices:true, optionalServices: SERVICE_UUID? [SERVICE_UUID]: undefined};
+    btDevice = await navigator.bluetooth.requestDevice(options);
+    setStatus('Connecting…');
+    gatt = await btDevice.gatt.connect();
+    setStatus('Discovering services…');
+
+    // Find notify characteristic
+    if (SERVICE_UUID && NOTIFY_CHAR_UUID){
+      const svc = await gatt.getPrimaryService(SERVICE_UUID);
+      notifyChar = await svc.getCharacteristic(NOTIFY_CHAR_UUID);
+      if (WRITE_CHAR_UUID) writeChar = await svc.getCharacteristic(WRITE_CHAR_UUID);
+    } else {
+      // Heuristic: first service with a notifying characteristic
+      const svcs = await gatt.getPrimaryServices();
+      outer: for (const s of svcs){
+        const chs = await s.getCharacteristics();
+        for (const c of chs){
+          if (c.properties && c.properties.notify){ notifyChar = c; break outer; }
+        }
       }
-      tsChart.update('none');
     }
 
-    // ========== Battery Badge ==========
-    const $batteryBadge = document.getElementById('battery-badge');
-    const $batteryPct   = document.getElementById('battery-pct');
+    if (!notifyChar) throw new Error('Notify characteristic not found');
+    await notifyChar.startNotifications();
+    notifyChar.addEventListener('characteristicvaluechanged', onNotify);
 
-    function updateBattery(pct){
-      if (Number.isFinite(pct) && pct >= 0 && pct <= 100) {
-        $batteryPct.textContent = pct;
-        $batteryBadge.classList.remove('low','warn','ok');
-        if (pct <= 20)      $batteryBadge.classList.add('low');
-        else if (pct <= 40) $batteryBadge.classList.add('warn');
-        else                $batteryBadge.classList.add('ok');
+    $('#btnConnect').disabled = true;
+    $('#btnDisconnect').disabled = false;
+    setConn('connected');
+    setStatus('Streaming…');
+  }catch(err){
+    console.error(err);
+    setStatus('Error: ' + err.message);
+    setConn('disconnected');
+  }
+});
+
+$('#btnDisconnect').addEventListener('click', () => {
+  try{
+    if (btDevice && btDevice.gatt.connected) btDevice.gatt.disconnect();
+  }catch(e){console.warn(e)}
+  $('#btnConnect').disabled = false;
+  $('#btnDisconnect').disabled = true;
+  setConn('disconnected');
+  setStatus('Disconnected');
+});
+
+const textDecoder = new TextDecoder();
+let lineBuf = '';
+
+// Handles each notification packet → aggregates to full lines, parses, updates tiles
+function onNotify(e){
+  const dv = e.target.value;
+  const u8 = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+  lineBuf += textDecoder.decode(u8, {stream:true});
+
+  let lines = lineBuf.split(/\r?\n/);
+  lineBuf = lines.pop(); // keep incomplete
+
+  for (const rawLine of lines){
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // Try to peel trailing 2-digit battery if configured
+    let peeledLine = line, parsedBattery = null;
+    if (BATTERY_LAST_TWO_DIGITS){
+      const m = peeledLine.match(/(\d{2})\s*$/);
+      if (m){
+        const b = parseInt(m[1],10);
+        if (!Number.isNaN(b) && b>=0 && b<=100){
+          parsedBattery = b;
+          peeledLine = peeledLine.slice(0, peeledLine.lastIndexOf(m[1])).replace(/[,\s]+$/,'');
+        }
       }
     }
 
-    function peelBatteryFromLine(line){
-      const m = line.trim().match(/(\d{2})\s*$/);
-      if (!m) return { dataLine: line, battery: null };
-      const battery = parseInt(m[1], 10);
-      const dataLine = line.slice(0, line.lastIndexOf(m[1])).trim();
-      return { dataLine, battery: (battery >= 0 && battery <= 100) ? battery : null };
-    }
-
-    // ========== BLE Handling ==========
-    let device, characteristic;
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    async function connectDevice() {
-      try {
-        device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: ['battery_service'] // replace with your custom UUID if needed
-        });
-        const server = await device.gatt.connect();
-        const services = await server.getPrimaryServices();
-        // use your actual notify characteristic here:
-        const service = services[0];
-        const chars = await service.getCharacteristics();
-        characteristic = chars.find(c => c.properties.notify);
-        await characteristic.startNotifications();
-        characteristic.addEventListener('characteristicvaluechanged', onBleNotify);
-        setStatus('Connected');
-      } catch (err) {
-        console.error(err);
-        setStatus('Connect failed');
+    // Parse CSV (fast-path). If your device sends key:value pairs, see fallback below.
+    let fields = peeledLine.split(',').map(s => s.trim());
+    if (fields.length < 2){
+      // Fallback: allow "hr:78 spo2:96 resp:21 ..." style
+      const kv = Object.fromEntries(peeledLine.split(/[\s,]+/).map(tok => tok.split(/[:=]/)).filter(p => p.length===2));
+      fields = [];
+      // Project keys into an array aligned with FIELD_MAP indices
+      const maxIdx = Math.max(...Object.values(FIELD_MAP));
+      for (let i=0;i<=maxIdx;i++) fields[i] = '';
+      for (const [k, idx] of Object.entries(FIELD_MAP)){
+        if (k==='battery') continue;
+        const v = kv[k] ?? kv[k.toUpperCase()] ?? kv[k.toLowerCase()];
+        if (v!=null) fields[idx] = v;
       }
     }
 
-    async function disconnectDevice() {
-      try {
-        if (device && device.gatt.connected) device.gatt.disconnect();
-        setStatus('Disconnected');
-      } catch(e){ console.error(e); }
+    // Extract signals using FIELD_MAP
+    const toNum = x => (x===undefined||x==='') ? NaN : Number(x);
+    const hr         = toNum(fields[FIELD_MAP.hr]);
+    const spo2       = toNum(fields[FIELD_MAP.spo2]);
+    const resp       = toNum(fields[FIELD_MAP.resp]);
+    const touch      = toNum(fields[FIELD_MAP.touch]);
+    const babyTemp   = toNum(fields[FIELD_MAP.babyTemp]);
+    const motherTemp = toNum(fields[FIELD_MAP.motherTemp]);
+
+    // Update tiles immediately on new data
+    if (!Number.isNaN(hr))         updateTile('hr', hr);
+    if (!Number.isNaN(spo2))       updateTile('spo2', spo2);
+    if (!Number.isNaN(resp))       updateTile('resp', resp);
+    if (!Number.isNaN(touch))      updateTile('touch', touch);
+    if (!Number.isNaN(babyTemp))   updateTile('babyTemp', babyTemp);
+    if (!Number.isNaN(motherTemp)) updateTile('motherTemp', motherTemp);
+
+    // Battery: prefer the peeled last-two-digits; otherwise look for a battery column
+    if (parsedBattery!=null){
+      updateBattery(parsedBattery);
+    } else if (FIELD_MAP.battery!=null && fields[FIELD_MAP.battery]!==undefined){
+      const b = toNum(fields[FIELD_MAP.battery]);
+      if (!Number.isNaN(b)) updateBattery(b);
     }
 
-    function setStatus(t){ document.getElementById('status').textContent = 'Status: ' + t; }
-
-    async function onBleNotify(e){
-      const dv = e.target.value;
-      const u8 = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
-      buffer += decoder.decode(u8, { stream: true });
-
-      let lines = buffer.split(/\r?\n/);
-      buffer = lines.pop();
-
-      for (const raw of lines) {
-        if (!raw.trim()) continue;
-        const { dataLine, battery } = peelBatteryFromLine(raw);
-        if (battery !== null) updateBattery(battery);
-
-        const val = parseFloat(dataLine);
-        if (!isNaN(val)) pushPoint(val);
-        appendLog(raw);
-      }
-    }
-
-    function appendLog(text) {
-      const logs = document.getElementById('logs');
-      logs.textContent += text + "\n";
-      logs.scrollTop = logs.scrollHeight;
-    }
-
-    // Buttons
-    document.getElementById('connect').onclick = connectDevice;
-    document.getElementById('disconnect').onclick = disconnectDevice;
-    document.getElementById('clear').onclick = () => document.getElementById('logs').textContent = '';
-  </script>
+    // Raw log (optional, can be removed)
+    logLine(rawLine);
+  }
+}
+</script>
 </body>
 </html>
