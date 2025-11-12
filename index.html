@@ -1,339 +1,190 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Baby Sensor Live – KMC (Recorder)</title>
-  <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#0f172a" />
-  <link rel="icon" href="icons/icon-192.png" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Baby Sensor Live - KMC</title>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#ffffff">
   <style>
-    :root { color-scheme: light dark; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-           margin:0; padding:0; background:#0b1220; color:#e5e7eb }
-    header { padding:14px 16px; background:#0f172a; position:sticky; top:0; z-index:10; display:flex; gap:10px; align-items:center; flex-wrap:wrap }
-    header h1 { font-size:18px; margin:0; font-weight:600 }
-    .card { background:#111827; border:1px solid #1f2937; border-radius:14px; padding:12px; margin:12px }
-    label { display:block; font-size:12px; color:#9ca3af; margin-bottom:4px }
-    input[type="text"] { width:100%; padding:10px; border-radius:10px; border:1px solid #374151; background:#0b1020; color:#e5e7eb }
-    button { padding:10px 14px; border-radius:10px; border:1px solid #374151; background:#1f2937; color:#e5e7eb }
-    button.primary { background:#2563eb; border-color:#1d4ed8 }
-    button:disabled { opacity:.5 }
-    .row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px }
-    .row-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px }
-    .pill { font-size:12px; padding:6px 10px; background:#0b1020; border:1px solid #243046; border-radius:9999px; display:inline-block }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
-    pre { white-space:pre-wrap; max-height:220px; overflow:auto; margin:0 }
-    canvas { width:100%; height:220px }
-    .muted { color:#9ca3af; font-size:12px }
-    #downloads a { display:block; margin-top:6px; }
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 1em;
+      background: #f9fafb;
+    }
+    h1 { font-size: 1.3rem; margin-bottom: 0.5em; }
+    button {
+      margin: 4px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+    #status {
+      margin: 0.5em 0;
+      font-weight: 600;
+      color: #374151;
+    }
+    #logs {
+      white-space: pre-wrap;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      padding: 8px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+
+    /* 🔋 Battery badge */
+    #battery-badge{
+      position: fixed;
+      top: 8px; right: 8px;
+      padding: 6px 10px;
+      border-radius: 12px;
+      font: 600 14px system-ui, sans-serif;
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+    }
+    #battery-badge.low   { background:#fff1f2; border-color:#fecaca; }
+    #battery-badge.warn  { background:#fffbeb; border-color:#fde68a; }
+    #battery-badge.ok    { background:#ecfdf5; border-color:#a7f3d0; }
+
+    canvas { max-width: 100%; margin-top: 10px; border-radius: 6px; }
   </style>
 </head>
+
 <body>
-  <header>
-    <h1>Baby Sensor Live – KMC</h1>
-    <span class="pill" id="status">idle</span>
-    <button id="installBtn" hidden>Install</button>
-  </header>
+  <h1>Baby Sensor Live – KMC</h1>
 
-  <div class="card">
-    <div class="row-3">
-      <div>
-        <label>BLE Service UUID</label>
-        <input id="serviceUUID" type="text" />
-      </div>
-      <div>
-        <label>Notify Characteristic UUID (device → phone)</label>
-        <input id="notifyUUID" type="text" />
-      </div>
-      <div>
-        <label>Write Characteristic UUID (phone → device)</label>
-        <input id="writeUUID" type="text" />
-      </div>
-    </div>
-    <div class="row-3" style="margin-top:8px">
-      <div>
-        <label>Client ID</label>
-        <input id="clientId" type="text" placeholder="1234567890" />
-      </div>
-      <div>
-        <label>Epoch (leave blank = now)</label>
-        <input id="epoch" type="text" placeholder="Unix time" />
-      </div>
-      <div>
-        <label>Session Label (optional)</label>
-        <input id="label" type="text" placeholder="e.g., baby_A_2025-10-23" />
-      </div>
-    </div>
-    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap: wrap">
-      <button class="primary" id="connectBtn">Connect</button>
-      <button id="disconnectBtn" disabled>Disconnect</button>
-      <button id="startBtn" disabled>Start + Record</button>
-      <button id="stopBtn" disabled>Stop + Save CSV</button>
-      <button id="batteryBtn" disabled>Battery</button>
-      <button id="motorOnBtn" disabled>Motor ON</button>
-      <button id="motorOffBtn" disabled>Motor OFF</button>
-      <button id="clearBtn">Clear Logs</button>
-    </div>
-    <div id="downloads" class="muted" style="margin-top:6px"></div>
-    <div class="muted" style="margin-top:6px">
-      Defaults: service=<span class="mono">6e400001-…cca9e</span>, notify=<span class="mono">6e400006-…cca9e</span>, write=<span class="mono">6e400002-…cca9e</span>.
-      Data saved to your device via a CSV download and cached in IndexedDB (history list appears below after saving).
-    </div>
+  <!-- 🔋 Battery display -->
+  <div id="battery-badge" class="battery ok" aria-label="Battery level">
+    🔋 <span id="battery-pct">--</span>%
   </div>
 
-  <div class="card">
-    <div class="row-2">
-      <div><canvas id="hrChart"></canvas></div>
-      <div><canvas id="spo2Chart"></canvas></div>
-    </div>
-    <div class="row-2" style="margin-top:12px">
-      <div><canvas id="respChart"></canvas></div>
-      <div><canvas id="touchChart"></canvas></div>
-    </div>
-    <div class="row-2" style="margin-top:12px">
-      <div><canvas id="tempBChart"></canvas></div>
-      <div><canvas id="tempMChart"></canvas></div>
-    </div>
+  <div>
+    <button id="connect">Connect</button>
+    <button id="disconnect">Disconnect</button>
+    <button id="start">Start + Record</button>
+    <button id="stop">Stop + Save CSV</button>
+    <button id="clear">Clear Logs</button>
   </div>
 
-  <div class="card">
-    <h3 style="margin:0 0 8px 0;">Debug Log</h3>
-    <pre id="log" class="mono"></pre>
-  </div>
+  <div id="status">Status: Idle</div>
+  <div id="logs"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script>
-<script>
-let deferredPrompt;
-const installBtn = document.getElementById('installBtn');
-window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt=e; installBtn.hidden=false; });
-installBtn.addEventListener('click', async () => { if(!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; installBtn.hidden=true; });
+  <canvas id="timeseries" height="140"></canvas>
 
-if('serviceWorker' in navigator){ window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js')); }
-
-const $ = id => document.getElementById(id);
-const statusEl = $('status'), logEl = $('log'), downloadsEl = $('downloads');
-const connectBtn = $('connectBtn'), disconnectBtn = $('disconnectBtn');
-const startBtn = $('startBtn'), stopBtn = $('stopBtn');
-const batteryBtn = $('batteryBtn'), motorOnBtn = $('motorOnBtn'), motorOffBtn = $('motorOffBtn');
-const clearBtn = $('clearBtn');
-
-const serviceUUIDEl = $('serviceUUID'), notifyUUIDEl = $('notifyUUID'), writeUUIDEl = $('writeUUID');
-const clientIdEl = $('clientId'), epochEl = $('epoch'), labelEl = $('label');
-
-serviceUUIDEl.value = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-notifyUUIDEl.value  = '6e400006-b5a3-f393-e0a9-e50e24dcca9e';
-writeUUIDEl.value   = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-clientIdEl.value    = '1234567890';
-
-function setStatus(t){ statusEl.textContent = t; }
-function log(...args){ const s = args.map(a => (a instanceof Error ? (a.stack||a.message) : (typeof a==='object'? JSON.stringify(a): String(a)))).join(' '); logEl.textContent += s + "\n"; logEl.scrollTop = logEl.scrollHeight; console.log(...args); }
-clearBtn.addEventListener('click', ()=> logEl.textContent='');
-
-function makeChart(canvas, label, yLabel){
-  return new Chart(canvas, { type:'line', data:{ labels:[], datasets:[{ label, data:[], tension:0.1, pointRadius:0 }] },
-    options:{ animation:false, responsive:true, maintainAspectRatio:false,
-      scales:{ x:{ type:'time', time:{ unit:'second', tooltipFormat:'HH:mm:ss' }}, y:{ title:{ display:true, text:yLabel } } } } });
-}
-const hrChart = makeChart($('hrChart'),'Heart Rate (BPM)','BPM');
-const spo2Chart = makeChart($('spo2Chart'),'SpO₂ (%)','%');
-const respChart = makeChart($('respChart'),'Respiration','rate');
-const touchChart = makeChart($('touchChart'),'Touch Active (0/1)','binary');
-const tempBChart = makeChart($('tempBChart'),'Baby Temp (°C)','°C');
-const tempMChart = makeChart($('tempMChart'),'Mother Temp (°C)','°C');
-
-function addPoint(chart, ts, value){
-  chart.data.labels.push(ts);
-  chart.data.datasets[0].data.push(value);
-  if(chart.data.labels.length>600){ chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
-  chart.update();
-}
-
-// IndexedDB helpers
-const DB_NAME='kmc_rec_db', STORE='sessions';
-function idbOpen(){
-  return new Promise((resolve,reject)=>{
-    const req = indexedDB.open(DB_NAME,1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath:'id' });
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbSaveSession(obj){
-  try{
-    const db = await idbOpen();
-    await new Promise((res,rej)=>{
-      const tx = db.transaction(STORE,'readwrite');
-      tx.objectStore(STORE).put(obj);
-      tx.oncomplete = () => res();
-      tx.onerror = () => rej(tx.error);
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // ========== Chart Setup ==========
+    const tsCtx = document.getElementById('timeseries').getContext('2d');
+    const tsData = { labels: [], datasets: [{ label: 'Sensor', data: [] }] };
+    const tsChart = new Chart(tsCtx, {
+      type: 'line',
+      data: tsData,
+      options: { animation: false, scales: { x: { display: false } } }
     });
-  }catch(e){ log('IDB save error:', e.message); }
-}
-async function idbListSessions(){
-  try{
-    const db = await idbOpen();
-    return await new Promise((res,rej)=>{
-      const out=[]; const tx = db.transaction(STORE,'readonly'); const store = tx.objectStore(STORE);
-      const req = store.openCursor();
-      req.onsuccess = () => { const cur=req.result; if(cur){ out.push(cur.value); cur.continue(); } else res(out); };
-      req.onerror = () => rej(req.error);
-    });
-  }catch(e){ log('IDB list error:', e.message); return []; }
-}
 
-// Recording
-let recording=false, rows=[], sessionId=null;
-function startRecording(){
-  rows = [];
-  recording = true;
-  sessionId = Date.now();
-  log('Recording started. sessionId=', sessionId);
-}
-function stopRecordingAndSave(){
-  recording = false;
-  if(rows.length===0){ log('No data captured.'); return; }
-  const label = labelEl.value.trim() || 'session';
-  const filename = `${label}_${new Date(sessionId).toISOString().replace(/[:]/g,'-')}.csv`;
-  const header = 'clientId,epoch,ts_iso,hr,spo2,resp,mtemp,btemp,touch,activeCount,battery';
-  const lines = rows.map(r => [r.clientId,r.epoch,r.tsISO,r.hr,r.spo2,r.resp,r.mtemp,r.btemp,r.touch,r.activeCount,r.battery].join(','));
-  const csv = header + '\n' + lines.join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.textContent = `Download ${filename}`;
-  downloadsEl.prepend(a);
-  idbSaveSession({ id: sessionId, name: filename, csv });
-  setTimeout(()=>URL.revokeObjectURL(url), 60000);
-}
-
-// BLE
-let device, server, svc, notifyChar, writeChar, buffer='';
-
-async function connect(){
-  try{
-    setStatus('requesting device…');
-    device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices:[serviceUUIDEl.value.trim()] });
-    log('Selected device:', device.name || '(no name)');
-    device.addEventListener('gattserverdisconnected', onDisconnected);
-    setStatus('connecting…');
-    server = await device.gatt.connect();
-    log('GATT connected');
-    svc = await server.getPrimaryService(serviceUUIDEl.value.trim());
-    notifyChar = await svc.getCharacteristic(notifyUUIDEl.value.trim());
-    await notifyChar.startNotifications();
-    notifyChar.addEventListener('characteristicvaluechanged', handleNotify);
-    writeChar  = await svc.getCharacteristic(writeUUIDEl.value.trim());
-    setStatus('connected');
-    connectBtn.disabled = true; disconnectBtn.disabled = false;
-    startBtn.disabled = stopBtn.disabled = batteryBtn.disabled = motorOnBtn.disabled = motorOffBtn.disabled = false;
-  }catch(err){
-    setStatus('error');
-    log('ERROR connect:', err);
-  }
-}
-function onDisconnected(){
-  setStatus('disconnected');
-  connectBtn.disabled = false; disconnectBtn.disabled = true;
-  startBtn.disabled = stopBtn.disabled = batteryBtn.disabled = motorOnBtn.disabled = motorOffBtn.disabled = true;
-}
-
-async function disconnect(){ try{ if(notifyChar){ await notifyChar.stopNotifications(); } }catch{} try{ if(device && device.gatt.connected){ device.gatt.disconnect(); } }catch{} }
-
-async function writeJSON(obj){
-  if(!writeChar){ log('No write characteristic'); return; }
-  const text = JSON.stringify(obj) + "\n";
-  const enc = new TextEncoder().encode(text);
-  try{ await writeChar.writeValue(enc); }
-  catch(e){ try{ await writeChar.writeValueWithoutResponse(enc); } catch(e2){ log('ERROR write:', e2.message); } }
-  log('TX ->', text.trim());
-}
-
-function nowEpoch(){ return Math.floor(Date.now()/1000).toString(); }
-
-startBtn.addEventListener('click', ()=>{
-  const cid = clientIdEl.value.trim() || '0000000000';
-  const ep = epochEl.value.trim() || nowEpoch();
-  startRecording();
-  writeJSON({ start:[cid, ep] });
-});
-stopBtn.addEventListener('click', ()=>{
-  const cid = clientIdEl.value.trim() || '0000000000';
-  writeJSON({ stop: cid });
-  stopRecordingAndSave();
-});
-batteryBtn.addEventListener('click', ()=>{
-  const cid = clientIdEl.value.trim() || '0000000000';
-  writeJSON({ batsts: cid });
-});
-motorOnBtn.addEventListener('click', ()=>{
-  const cid = clientIdEl.value.trim() || '0000000000';
-  writeJSON({ motorctrl:[cid, "1"] });
-});
-motorOffBtn.addEventListener('click', ()=>{
-  const cid = clientIdEl.value.trim() || '0000000000';
-  writeJSON({ motorctrl:[cid, "0"] });
-});
-
-function handleNotify(e){
-  const txt = new TextDecoder().decode(e.target.value);
-  buffer += txt;
-  let idx;
-  while((idx = buffer.indexOf("\n")) >= 0){
-    const line = buffer.slice(0, idx).replace(/\r$/, '');
-    buffer = buffer.slice(idx+1);
-    const trimmed = line.trim();
-    if(!trimmed) continue;
-    log('RX <-', trimmed);
-    try{
-      const obj = JSON.parse(trimmed);
-      if(obj.data && Array.isArray(obj.data)){
-        const arr = obj.data;
-        const cid = arr[0];
-        const epoch = Number(arr[1]) || Math.floor(Date.now()/1000);
-        const ts = new Date(epoch*1000);
-        const hr = Number(arr[2]); if(!isNaN(hr)) addPoint(hrChart, ts, hr);
-        const spo2 = Number(arr[3]); if(!isNaN(spo2)) addPoint(spo2Chart, ts, spo2);
-        const resp = Number(arr[4]); if(!isNaN(resp)) addPoint(respChart, ts, resp);
-        const mtemp = Number(arr[5]); if(!isNaN(mtemp)) addPoint(tempMChart, ts, mtemp);
-        const btemp = Number(arr[6]); if(!isNaN(btemp)) addPoint(tempBChart, ts, btemp);
-        const touch = Number(arr[7]); if(!isNaN(touch)) addPoint(touchChart, ts, touch);
-        const activeCount = Number(arr[8]);
-        const battery = Number(arr[9]);
-        if(recording){
-          rows.push({ clientId: cid, epoch, tsISO: ts.toISOString(), hr, spo2, resp, mtemp, btemp, touch, activeCount, battery });
-        }
+    function pushPoint(v, max = 1000) {
+      tsData.labels.push(Date.now());
+      tsData.datasets[0].data.push(v);
+      if (tsData.labels.length > max) {
+        tsData.labels.shift();
+        tsData.datasets[0].data.shift();
       }
-      if(obj.hr){ log('ALERT HR:', JSON.stringify(obj.hr)); }
-      if(obj.spo2){ log('ALERT SpO2:', JSON.stringify(obj.spo2)); }
-      if(obj.btemp){ log('ALERT Baby Temp:', JSON.stringify(obj.btemp)); }
-      if(obj.mtemp){ log('ALERT Mother Temp:', JSON.stringify(obj.mtemp)); }
-      if(obj.apnea){ log('ALERT Apnea:', JSON.stringify(obj.apnea)); }
-      if(obj.batsts){ log('BATTERY:', JSON.stringify(obj.batsts)); }
-    }catch(err){ /* ignore non-JSON */ }
-  }
-}
-
-connectBtn.addEventListener('click', connect);
-disconnectBtn.addEventListener('click', disconnect);
-
-// Load previous recordings
-(async function(){
-  const list = await idbListSessions();
-  if(list.length){
-    downloadsEl.innerHTML = '<strong>Saved sessions:</strong>';
-    for(const s of list.sort((a,b)=>b.id-a.id)){
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([s.csv], {type:'text/csv'}));
-      a.download = s.name;
-      a.textContent = 'Download ' + s.name;
-      downloadsEl.appendChild(a);
+      tsChart.update('none');
     }
-  }
-})();
 
-if(!('bluetooth' in navigator)){ setStatus('Web Bluetooth not supported'); log('This device/browser does not support Web Bluetooth.'); } else { setStatus('ready'); }
-</script>
+    // ========== Battery Badge ==========
+    const $batteryBadge = document.getElementById('battery-badge');
+    const $batteryPct   = document.getElementById('battery-pct');
+
+    function updateBattery(pct){
+      if (Number.isFinite(pct) && pct >= 0 && pct <= 100) {
+        $batteryPct.textContent = pct;
+        $batteryBadge.classList.remove('low','warn','ok');
+        if (pct <= 20)      $batteryBadge.classList.add('low');
+        else if (pct <= 40) $batteryBadge.classList.add('warn');
+        else                $batteryBadge.classList.add('ok');
+      }
+    }
+
+    function peelBatteryFromLine(line){
+      const m = line.trim().match(/(\d{2})\s*$/);
+      if (!m) return { dataLine: line, battery: null };
+      const battery = parseInt(m[1], 10);
+      const dataLine = line.slice(0, line.lastIndexOf(m[1])).trim();
+      return { dataLine, battery: (battery >= 0 && battery <= 100) ? battery : null };
+    }
+
+    // ========== BLE Handling ==========
+    let device, characteristic;
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    async function connectDevice() {
+      try {
+        device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: ['battery_service'] // replace with your custom UUID if needed
+        });
+        const server = await device.gatt.connect();
+        const services = await server.getPrimaryServices();
+        // use your actual notify characteristic here:
+        const service = services[0];
+        const chars = await service.getCharacteristics();
+        characteristic = chars.find(c => c.properties.notify);
+        await characteristic.startNotifications();
+        characteristic.addEventListener('characteristicvaluechanged', onBleNotify);
+        setStatus('Connected');
+      } catch (err) {
+        console.error(err);
+        setStatus('Connect failed');
+      }
+    }
+
+    async function disconnectDevice() {
+      try {
+        if (device && device.gatt.connected) device.gatt.disconnect();
+        setStatus('Disconnected');
+      } catch(e){ console.error(e); }
+    }
+
+    function setStatus(t){ document.getElementById('status').textContent = 'Status: ' + t; }
+
+    async function onBleNotify(e){
+      const dv = e.target.value;
+      const u8 = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+      buffer += decoder.decode(u8, { stream: true });
+
+      let lines = buffer.split(/\r?\n/);
+      buffer = lines.pop();
+
+      for (const raw of lines) {
+        if (!raw.trim()) continue;
+        const { dataLine, battery } = peelBatteryFromLine(raw);
+        if (battery !== null) updateBattery(battery);
+
+        const val = parseFloat(dataLine);
+        if (!isNaN(val)) pushPoint(val);
+        appendLog(raw);
+      }
+    }
+
+    function appendLog(text) {
+      const logs = document.getElementById('logs');
+      logs.textContent += text + "\n";
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    // Buttons
+    document.getElementById('connect').onclick = connectDevice;
+    document.getElementById('disconnect').onclick = disconnectDevice;
+    document.getElementById('clear').onclick = () => document.getElementById('logs').textContent = '';
+  </script>
 </body>
 </html>
