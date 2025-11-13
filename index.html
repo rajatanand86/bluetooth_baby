@@ -33,6 +33,8 @@
   <header>
     <h1>Baby Sensor Live – KMC</h1>
     <span class="pill" id="status">idle</span>
+    <!-- 🔋 Battery display (added) -->
+    <span class="pill" id="batteryPill">🔋 --%</span>
     <button id="installBtn" hidden>Install</button>
   </header>
 
@@ -276,6 +278,16 @@ motorOffBtn.addEventListener('click', ()=>{
   writeJSON({ motorctrl:[cid, "0"] });
 });
 
+// 🔋 Battery display helpers (added)
+const batteryPill = $('batteryPill');
+let lastBatteryPct = null;
+function updateBatteryPill(pct){
+  if (typeof pct === 'number' && pct >= 0 && pct <= 100) {
+    lastBatteryPct = pct;
+    batteryPill.textContent = `🔋 ${pct}%`;
+  }
+}
+
 function handleNotify(e){
   const txt = new TextDecoder().decode(e.target.value);
   buffer += txt;
@@ -285,6 +297,14 @@ function handleNotify(e){
     buffer = buffer.slice(idx+1);
     const trimmed = line.trim();
     if(!trimmed) continue;
+
+    // 🔋 Extract last two digits as battery percentage and update pill (added)
+    const battMatch = trimmed.match(/(\d{2})\s*$/);
+    if (battMatch) {
+      const maybePct = parseInt(battMatch[1], 10);
+      if (!Number.isNaN(maybePct)) updateBatteryPill(maybePct);
+    }
+
     log('RX <-', trimmed);
     try{
       const obj = JSON.parse(trimmed);
@@ -301,9 +321,12 @@ function handleNotify(e){
         const touch = Number(arr[7]); if(!isNaN(touch)) addPoint(touchChart, ts, touch);
         const activeCount = Number(arr[8]);
         const battery = Number(arr[9]);
+        // If recording, keep original CSV layout untouched
         if(recording){
           rows.push({ clientId: cid, epoch, tsISO: ts.toISOString(), hr, spo2, resp, mtemp, btemp, touch, activeCount, battery });
         }
+        // If battery field is present in JSON, reflect it in pill too
+        if(!isNaN(battery)) updateBatteryPill(battery);
       }
       if(obj.hr){ log('ALERT HR:', JSON.stringify(obj.hr)); }
       if(obj.spo2){ log('ALERT SpO2:', JSON.stringify(obj.spo2)); }
