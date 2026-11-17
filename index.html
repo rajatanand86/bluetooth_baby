@@ -77,6 +77,14 @@
       <button id="motorOffBtn" disabled>Motor OFF</button>
       <button id="clearBtn">Clear Logs</button>
     </div>
+    <div style="margin-top:12px">
+      <label for="contactTimeout">Data gap timeout (seconds; required for contact timing)</label>
+      <input id="contactTimeout" type="number" min="0.1" step="0.1" placeholder="Enter a timeout longer than the normal message interval" style="width:100%;box-sizing:border-box" />
+      <p class="muted">Contact uses the existing touch field: 1 = contact, 0 = no contact. Time is counted between consecutive contact samples using device timestamps; it does not advance without new data. Gaps beyond your timeout break continuity.</p>
+      <span class="pill">Total contact: <strong id="contactTotal">00:00:00</strong></span>
+      <span class="pill">Current continuous contact: <strong id="contactCurrent">00:00:00</strong></span>
+      <p class="muted" id="contactStatus">Enter a data gap timeout to enable contact timing.</p>
+    </div>
     <div id="downloads" class="muted" style="margin-top:6px"></div>
     <div class="muted" style="margin-top:6px">
       Defaults: service=<span class="mono">6e400001-…cca9e</span>, notify=<span class="mono">6e400006-…cca9e</span>, write=<span class="mono">6e400002-…cca9e</span>.
@@ -187,14 +195,67 @@ async function idbListSessions(){
 
 // Recording
 let recording=false, rows=[], sessionId=null;
+let contactTotalSeconds=0, contactCurrentSeconds=0, previousContact=null, contactGapTimer=null;
+function renderContact(){
+  const format = seconds => {
+    const s = Math.floor(seconds);
+    return [Math.floor(s/3600), Math.floor(s/60)%60, s%60].map(n => String(n).padStart(2,'0')).join(':');
+  };
+  $('contactTotal').textContent = format(contactTotalSeconds);
+  $('contactCurrent').textContent = format(contactCurrentSeconds);
+}
+function breakContact(reason){
+  clearTimeout(contactGapTimer);
+  previousContact = null;
+  contactCurrentSeconds = 0;
+  $('contactStatus').textContent = reason;
+  renderContact();
+}
+$('contactTimeout').addEventListener('input', () => breakContact('Timing setting changed; waiting for new contact samples.'));
+function trackContact(rawTouch, rawEpoch, cid){
+  if(!recording) return;
+  const timeout = Number($('contactTimeout').value);
+  if(!Number.isFinite(timeout) || timeout <= 0){
+    breakContact('Enter a data gap timeout to enable contact timing.'); return;
+  }
+  const epoch = Number(rawEpoch);
+  const touch = rawTouch === 1 || rawTouch === '1' ? 1 : rawTouch === 0 || rawTouch === '0' ? 0 : null;
+  if(touch === null || rawEpoch === null || rawEpoch === '' || !Number.isFinite(epoch) || epoch <= 0){
+    breakContact('Contact timing paused: invalid contact value or device timestamp.'); return;
+  }
+  if(touch === 0){ breakContact('No contact'); return; }
+  const received = performance.now();
+  if(previousContact){
+    const delta = epoch - previousContact.epoch;
+    if(cid === previousContact.cid && delta >= 0 && delta <= timeout && received - previousContact.received <= timeout*1000){
+      contactTotalSeconds += delta;
+      contactCurrentSeconds += delta;
+    }else{
+      contactCurrentSeconds = 0;
+    }
+  }
+  previousContact = {epoch, received, cid};
+  clearTimeout(contactGapTimer);
+  contactGapTimer = setTimeout(() => breakContact('Contact timing paused: data stopped.'), timeout*1000);
+  $('contactStatus').textContent = 'Contact detected; counting confirmed sample intervals.';
+  renderContact();
+}
 function startRecording(){
+  if(recording) return;
+  contactTotalSeconds = 0;
+  breakContact('Recording started; waiting for contact samples.');
   rows = [];
   recording = true;
+  startBtn.disabled = true;
   sessionId = Date.now();
   log('Recording started. sessionId=', sessionId);
 }
 function stopRecordingAndSave(){
   recording = false;
+  clearTimeout(contactGapTimer);
+  previousContact = null;
+  $('contactStatus').textContent = 'Recording stopped. Contact times retained until the next recording.';
+  startBtn.disabled = !(device && device.gatt.connected);
   if(rows.length===0){ log('No data captured.'); return; }
   const label = labelEl.value.trim() || 'session';
   const filename = `${label}_${new Date(sessionId).toISOString().replace(/[:]/g,'-')}.csv`;
@@ -213,8 +274,26 @@ function stopRecordingAndSave(){
 // BLE
 let device, server, svc, notifyChar, writeChar, buffer='';
 
+function selectCharacteristic(characteristics, requestedUUID, role){
+  const supports = role === 'notify'
+    ? c => c.properties.notify || c.properties.indicate
+    : c => c.properties.write || c.properties.writeWithoutResponse;
+  const requested = characteristics.find(c => c.uuid.toLowerCase() === requestedUUID.trim().toLowerCase());
+  if(requested && supports(requested)) return requested;
+  const candidates = characteristics.filter(supports);
+  if(candidates.length !== 1){
+    throw new Error(`Cannot select ${role} characteristic: expected ${requestedUUID}; found ${candidates.length} compatible characteristics. See UUIDs in Debug Log and enter the correct UUID.`);
+  }
+  log(`Configured ${role} UUID unavailable; using the only compatible characteristic:`, candidates[0].uuid);
+  return candidates[0];
+}
+
 async function connect(){
+  connectBtn.disabled = true;
   try{
+    if(device && device.gatt.connected) await disconnect();
+    buffer = '';
+    notifyChar = writeChar = null;
     setStatus('requesting device…');
     device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices:[serviceUUIDEl.value.trim()] });
     log('Selected device:', device.name || '(no name)');
@@ -223,22 +302,39 @@ async function connect(){
     server = await device.gatt.connect();
     log('GATT connected');
     svc = await server.getPrimaryService(serviceUUIDEl.value.trim());
-    notifyChar = await svc.getCharacteristic(notifyUUIDEl.value.trim());
-    await notifyChar.startNotifications();
+    const characteristics = await svc.getCharacteristics();
+    for(const c of characteristics){
+      log('Characteristic:', c.uuid, {
+        notify: c.properties.notify, indicate: c.properties.indicate,
+        write: c.properties.write, writeWithoutResponse: c.properties.writeWithoutResponse
+      });
+    }
+    notifyChar = selectCharacteristic(characteristics, notifyUUIDEl.value, 'notify');
+    writeChar = selectCharacteristic(characteristics, writeUUIDEl.value, 'write');
+    notifyUUIDEl.value = notifyChar.uuid;
+    writeUUIDEl.value = writeChar.uuid;
     notifyChar.addEventListener('characteristicvaluechanged', handleNotify);
-    writeChar  = await svc.getCharacteristic(writeUUIDEl.value.trim());
+    await notifyChar.startNotifications();
     setStatus('connected');
     connectBtn.disabled = true; disconnectBtn.disabled = false;
     startBtn.disabled = stopBtn.disabled = batteryBtn.disabled = motorOnBtn.disabled = motorOffBtn.disabled = false;
+    startBtn.disabled = recording;
   }catch(err){
+    if(notifyChar) notifyChar.removeEventListener('characteristicvaluechanged', handleNotify);
+    if(device && device.gatt.connected) device.gatt.disconnect();
+    notifyChar = writeChar = null;
+    connectBtn.disabled = false; disconnectBtn.disabled = true;
+    startBtn.disabled = stopBtn.disabled = batteryBtn.disabled = motorOnBtn.disabled = motorOffBtn.disabled = true;
     setStatus('error');
     log('ERROR connect:', err);
   }
 }
 function onDisconnected(){
+  breakContact('Contact timing paused: Bluetooth disconnected.');
   setStatus('disconnected');
   connectBtn.disabled = false; disconnectBtn.disabled = true;
-  startBtn.disabled = stopBtn.disabled = batteryBtn.disabled = motorOnBtn.disabled = motorOffBtn.disabled = true;
+  startBtn.disabled = batteryBtn.disabled = motorOnBtn.disabled = motorOffBtn.disabled = true;
+  stopBtn.disabled = !recording;
 }
 
 async function disconnect(){ try{ if(notifyChar){ await notifyChar.stopNotifications(); } }catch{} try{ if(device && device.gatt.connected){ device.gatt.disconnect(); } }catch{} }
@@ -255,6 +351,7 @@ async function writeJSON(obj){
 function nowEpoch(){ return Math.floor(Date.now()/1000).toString(); }
 
 startBtn.addEventListener('click', ()=>{
+  if(recording) return;
   const cid = clientIdEl.value.trim() || '0000000000';
   const ep = epochEl.value.trim() || nowEpoch();
   startRecording();
@@ -319,6 +416,7 @@ function handleNotify(e){
         const mtemp = Number(arr[5]); if(!isNaN(mtemp)) addPoint(tempMChart, ts, mtemp);
         const btemp = Number(arr[6]); if(!isNaN(btemp)) addPoint(tempBChart, ts, btemp);
         const touch = Number(arr[7]); if(!isNaN(touch)) addPoint(touchChart, ts, touch);
+        trackContact(arr[7], arr[1], cid);
         const activeCount = Number(arr[8]);
         const battery = Number(arr[9]);
         // If recording, keep original CSV layout untouched
