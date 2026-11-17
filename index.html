@@ -80,7 +80,7 @@
     <div style="margin-top:12px">
       <label for="contactTimeout">Data gap timeout (seconds; required for contact timing)</label>
       <input id="contactTimeout" type="number" min="0.1" step="0.1" placeholder="Enter a timeout longer than the normal message interval" style="width:100%;box-sizing:border-box" />
-      <p class="muted">Contact uses the ninth packet value (previously labelled activeCount): 1 = contact, 0 = no contact. This mapping awaits the controlled contact test. Time is counted between consecutive contact samples using device timestamps; it does not advance without new data. Gaps beyond your timeout break continuity.</p>
+      <p class="muted">Contact uses the ninth packet value (previously labelled activeCount): 1 = contact, 0 = no contact. The field position matches the hardware packet specification; verify contact behaviour with the controlled test. Time is counted between consecutive contact samples using device timestamps; it does not advance without new data. Gaps beyond your timeout break continuity.</p>
       <span class="pill">Total contact: <strong id="contactTotal">00:00:00</strong></span>
       <span class="pill">Current continuous contact: <strong id="contactCurrent">00:00:00</strong></span>
       <p class="muted" id="contactStatus">Enter a data gap timeout to enable contact timing.</p>
@@ -269,9 +269,9 @@ function stopRecordingAndSave(){
   if(rows.length===0){ log('No data captured.'); return; }
   const label = labelEl.value.trim() || 'session';
   const filename = `${label}_${new Date(sessionId).toISOString().replace(/[:]/g,'-')}.csv`;
-  const header = 'clientId,epoch,ts_iso,datetime_IST,elapsed_seconds,hr,spo2,resp,mtemp,btemp,raw_data_7,contact,battery,total_contact_seconds,total_contact_hhmmss,current_contact_seconds,current_contact_hhmmss,contact_timing_enabled,data_gap_timeout_seconds';
+  const header = 'clientId,epoch,ts_iso,datetime_IST,elapsed_seconds,hr,spo2,spo2_confidence,resp,mtemp,btemp,contact,battery,total_contact_seconds,total_contact_hhmmss,current_contact_seconds,current_contact_hhmmss,contact_timing_enabled,data_gap_timeout_seconds';
   const firstEpoch = rows[0].epoch;
-  const lines = rows.map(r => [r.clientId,r.epoch,r.tsISO,istDateTime(r.epoch),r.epoch-firstEpoch,r.hr,r.spo2,r.resp,r.mtemp,r.btemp,r.rawData7,r.touch,r.battery,r.totalContactSeconds, r.totalContactSeconds == null ? '' : formatDuration(r.totalContactSeconds),r.currentContactSeconds,r.currentContactSeconds == null ? '' : formatDuration(r.currentContactSeconds),r.timingEnabled,r.timeoutSeconds].map(csvCell).join(','));
+  const lines = rows.map(r => [r.clientId,r.epoch,r.tsISO,istDateTime(r.epoch),r.epoch-firstEpoch,r.hr,r.spo2,r.spo2Confidence,r.resp,r.mtemp,r.btemp,r.touch,r.battery,r.totalContactSeconds, r.totalContactSeconds == null ? '' : formatDuration(r.totalContactSeconds),r.currentContactSeconds,r.currentContactSeconds == null ? '' : formatDuration(r.currentContactSeconds),r.timingEnabled,r.timeoutSeconds].map(csvCell).join(','));
   const csv = '\uFEFF' + header + '\r\n' + lines.join('\r\n');
   const blob = new Blob([csv], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
@@ -423,19 +423,19 @@ function handleNotify(e){
         const ts = new Date(epoch*1000);
         const hr = Number(arr[2]); if(!isNaN(hr)) addPoint(hrChart, ts, hr);
         const spo2 = Number(arr[3]); if(!isNaN(spo2)) addPoint(spo2Chart, ts, spo2);
-        const resp = Number(arr[4]); if(!isNaN(resp)) addPoint(respChart, ts, resp);
-        const mtemp = Number(arr[5]); if(!isNaN(mtemp)) addPoint(tempMChart, ts, mtemp);
-        const btemp = Number(arr[6]); if(!isNaN(btemp)) addPoint(tempBChart, ts, btemp);
-        const rawData7 = arr[7]; // Preserve this field without inferring its meaning.
+        const spo2Confidence = Number(arr[4]);
+        const resp = Number(arr[5]); if(!isNaN(resp)) addPoint(respChart, ts, resp);
+        const mtemp = Number(arr[6]); if(!isNaN(mtemp)) addPoint(tempMChart, ts, mtemp);
+        const btemp = Number(arr[7]); if(!isNaN(btemp)) addPoint(tempBChart, ts, btemp);
         const touch = arr[8] === 1 || arr[8] === '1' ? 1 : arr[8] === 0 || arr[8] === '0' ? 0 : null;
         addPoint(touchChart, ts, touch);
         trackContact(arr[8], arr[1], cid);
         const battery = Number(arr[9]);
-        // Export the contact mapping and timing alongside the unclassified packet field.
+        // Export the contact mapping and timing alongside SpO2 confidence.
         if(recording){
           const timeoutSeconds = Number($('contactTimeout').value);
           const timingEnabled = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0;
-          rows.push({ clientId: cid, epoch, tsISO: ts.toISOString(), hr, spo2, resp, mtemp, btemp, rawData7, touch, battery,
+          rows.push({ clientId: cid, epoch, tsISO: ts.toISOString(), hr, spo2, spo2Confidence, resp, mtemp, btemp, touch, battery,
             totalContactSeconds: timingEnabled ? contactTotalSeconds : null,
             currentContactSeconds: timingEnabled ? contactCurrentSeconds : null,
             timingEnabled, timeoutSeconds: timingEnabled ? timeoutSeconds : null });
